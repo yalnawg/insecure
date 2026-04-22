@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Insecure</string>
+    <string name="launch">LAUNCH</string>
+    <string name="launch_parameters">COMMAND-LINE ARGUMENTS</string>
+    <string name="info">INFO</string>
+    <string name="engine_not_found_title">Engine not found!</string>
+    <string name="engine_not_found_msg">Xash3D FWGS not installed on your device. Would you like to download it from GitHub?</string>
+</resources>

@@ -48,7 +48,7 @@ jobs:
       run: |
         sudo apt update
         ./steam-runtime/setup_chroot.sh --i386 --tarball ./com.valvesoftware.SteamRuntime.Sdk-i386-scout-sysroot.tar.gz
-        sudo sed -i 's/groups=sudo/groups=adm/g' /etc/schroot/chroot.d/steamrt_scout_i386.conf
+        sudo < /etc/schroot/chroot.d/steamrt_scout_i386.conf sed -i 's/groups=sudo/groups=adm/g' /etc/schroot/chroot.d/steamrt_scout_i386.conf
 
     - name: Build on Linux
       if: startsWith(matrix.os, 'ubuntu')
@@ -134,4 +134,124 @@ jobs:
       with:
         name: hlsdk-${{ steps.extract_branch.outputs.branch }}-windows-vgui
         path: dist-vgui/${{ steps.extract_gamedir.outputs.gamedir }}
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build Android APK
+        env:
+          KEYSTORE_FILE_PATH: ${{ github.workspace }}/signingkey.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > ${{ env.KEYSTORE_FILE_PATH }}
+          ./gradlew assembleRelease
+          find app/build/outputs/apk/release/ -name "*.apk" -exec cp {} ../app-release.apk \;
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hlsdk-${{ github.ref_name }}-android
+          path: app-release.apk
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/insecure') && always()
+    needs: [ build, android ]
+    steps:
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare Release Files
+        run: |
+          mkdir -p release-dist
+          find all-artifacts -name "app-release.apk" -exec cp {} release-dist/hlsdk-${{ github.ref_name }}-android.apk \;
+          cd all-artifacts
+          for d in */; do
+            dir_name=$(basename "$d")
+            if [[ "$dir_name" != *"android"* ]]; then
+              zip -r "../release-dist/${dir_name}.zip" "$dir_name"
+            fi
+          done
+          
+      - name: Remove old release
+        run: |
+          TAG_NAME=${{ github.ref_name == 'main' && 'continuous' || format('continuous-{0}', github.ref_name) }}
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            gh release delete "$TAG_NAME" --yes --cleanup-tag --repo ${{ github.repository }}
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload new release
+        run: |
+          gh release create ${{ env.TAG_NAME }} \
+            --title "${{ github.ref_name }} development build" \
+            --prerelease \
+            release-dist/* \
+            --repo ${{ github.repository }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Discord Message
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          MESSAGE_ID: "1496163272204750939"
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          curl -X PATCH -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [
+              {
+                "title": "Insecure latest development build",
+                "url": "https://github.com/yalnawg/insecure/releases/tag/continuous-insecure",
+                "description": "* [Android](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-android.apk)\n* [Linux with VGUI](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-linux-vgui.zip)\n* [Linux](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-linux.zip)\n* [Windows (i386)](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-windows.zip)\n* [Windows (x64)](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-windows_x64.zip)",
+                "color": 5258682,
+                "timestamp": "'"$TIMESTAMP"'",
+                "thumbnail": {
+                  "url": "https://cdn.discordapp.com/attachments/1444986673309155339/1495904706470350848/2034866.png?ex=69e89a12&is=69e74892&hm=73cf64d5a2d8530555e321c9977a318af5a6be993f38320f6f81ad1857054428&"
+                },
+                "footer": {
+                  "text": "commit '"$SHORT_SHA"'"
+                }
+              }
+            ],
+            "components": [
+              {
+                "type": 1,
+                "components": [
+                  {
+                    "type": 2,
+                    "style": 5,
+                    "label": "Source Code",
+                    "url": "https://github.com/Elinsrc/hlsdk-portable/tree/insecure"
+                  }
+                ]
+              }
+            ]
+          }' "${DISCORD_WEBHOOK}/messages/${MESSAGE_ID}"
 
