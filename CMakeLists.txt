@@ -228,3 +228,10 @@ if(POLLY)
 		add_compile_options(-fgraphite-identity -floop-interchange -floop-block)
 	endif()
 endif()
+
+if(APPLE)
+    # just test bro pls work
+    set(CPACK_PACKAGE_FILE_NAME "HLSDK-macOS-${CMAKE_SYSTEM_PROCESSOR}")
+    set(CPACK_GENERATOR "ZIP")
+    include(CPack)
+endif()

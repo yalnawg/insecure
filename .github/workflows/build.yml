@@ -171,11 +171,88 @@ jobs:
           name: hlsdk-${{ github.ref_name }}-android
           path: app-release.apk
 
+  macos:
+    name: macOS
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            arch: x86_64
+          - os: macos-latest
+            arch: arm64
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install cmake ninja fontconfig
+
+      - name: Configure
+        run: |
+          cmake -G Ninja \
+            -B build \
+            -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DPOLLY=ON \
+            -DCMAKE_INSTALL_PREFIX="$PWD/dist"
+
+      - name: Build
+        run: |
+          cmake --build build --target all
+          cmake --build build --target install
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "branch=$(echo ${GITHUB_REF#refs/heads/} | tr '/' '_')" >> $GITHUB_OUTPUT
+        id: extract_branch
+
+      - name: Extract gamedir
+        shell: bash
+        run: echo "gamedir=$(grep build/CMakeCache.txt -Ee 'GAMEDIR:STRING=[a-z]+' | cut -d '=' -f 2)" >> $GITHUB_OUTPUT
+        id: extract_gamedir
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hlsdk-${{ steps.extract_branch.outputs.branch }}-macos-${{ matrix.arch }}
+          path: dist/${{ steps.extract_gamedir.outputs.gamedir }}
+  nswitch:
+    name: Nintendo Switch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fix permissions and line endings
+        run: |
+          sed -i 's/\r$//' scripts/gha/*.sh
+          chmod +x scripts/gha/*.sh
+
+      - name: Install dependencies
+        run: bash scripts/gha/deps_nswitch.sh
+
+      - name: Build
+        run: bash scripts/gha/build_nswitch.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hlsdk-${{ github.ref_name }}-switch
+          path: dist/
+
   release:
     name: Release
     runs-on: ubuntu-latest
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/insecure') && always()
-    needs: [ build, android ]
+    needs: [ build, android, macos, nswitch ]
     steps:
       - name: Fetch artifacts
         uses: actions/download-artifact@v4
@@ -214,7 +291,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update Discord Message
+      - name: Update Discord message
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           MESSAGE_ID: "1496163272204750939"
@@ -228,8 +305,8 @@ jobs:
             "embeds": [
               {
                 "title": "Insecure latest development build",
-                "url": "https://github.com/yalnawg/insecure/releases/tag/continuous-insecure",
-                "description": "* [Android](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-android.apk)\n* [Linux with VGUI](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-linux-vgui.zip)\n* [Linux](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-linux.zip)\n* [Windows (i386)](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-windows.zip)\n* [Windows (x64)](https://github.com/yalnawg/insecure/releases/download/continuous-insecure/hlsdk-${{ github.ref_name }}-windows_x64.zip)",
+                "url": "https://github.com/yalnawg/insecure/releases/tag/${{ env.TAG_NAME }}",
+                "description": "* [Android](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-android.apk)\n* [Linux with VGUI](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-linux-vgui.zip)\n* [Linux](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-linux.zip)\n* [Windows (i386)](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-windows.zip)\n* [Windows (x64)](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-windows_x64.zip)\n* [macOS (arm64)](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-macos-arm64.zip)\n* [macOS (x86_64)](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-macos-x86_64.zip)​\n* [Nintendo Switch](https://github.com/yalnawg/insecure/releases/download/${{ env.TAG_NAME }}/hlsdk-${{ github.ref_name }}-switch.zip)",
                 "color": 5258682,
                 "timestamp": "'"$TIMESTAMP"'",
                 "thumbnail": {
