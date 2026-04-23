@@ -286,7 +286,7 @@ jobs:
                 "color": 5258682,
                 "timestamp": "'"$TIMESTAMP"'",
                 "thumbnail": {
-                  "url": "https://cdn.discordapp.com/attachments/1444986673309155339/1495904706470350848/2034866.png?ex=69e89a12&is=69e74892&hm=73cf64d5a2d8530555e321c9977a318af5a6be993f38320f6f81ad1857054428&"
+                  "url": "https://cdn.discordapp.com/attachments/1444986673309155339/1496877213067251802/2034866.png?ex=69eb7b0a&is=69ea298a&hm=cfc3b1f3d3fb77fcae19e0916604157ad75c305a89a39debd72e85dbc3661da6&"
                 },
                 "footer": {
                   "text": "commit '"$SHORT_SHA"'"
